@@ -210,7 +210,7 @@ install_piper() { # pipx, via Homebrew if needed; a Python too new for Piper fal
 }
 
 case "${1:-toggle}" in
-  hook-start) j=$(cat); is_on "$(hook_sid "$j")" && rules ;;
+  hook-start) j=$(cat); if is_on "$(hook_sid "$j")"; then rules; fi ;;
   hook-stop)  speak "$(cat)" ;;
   on)     need_setup || turn_on ;;
   off)    set_flag off || exit 1; server_stop; echo "Voice replies OFF for $(scope_name). Stop adding the 🔊 block to replies." ;;
