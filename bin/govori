@@ -1,7 +1,7 @@
 #!/bin/bash
 # govori: spoken Claude replies. Engine: Piper if a voice for the reply's language is installed, else macOS `say`.
 PATH="$HOME/.local/bin:$PATH"
-D="$HOME/.claude/govori"; ON="$D/on"; S="$D/sessions"; V="$D/voices"
+D="$HOME/.claude/govori"; ON="$D/on"; S="$D/sessions"; V="$D/voices"; L="$D/say-voices"
 
 # State: by default voice is on per session (flag file $S/<session id>). With GOVORI_SCOPE=global
 # it is one flag file $ON shared by every session. Hooks get the id on stdin, commands via env.
@@ -40,8 +40,20 @@ End EVERY reply with this block, as the very last thing in the message:
 R
 }
 
-lang() { # dominant language of $1 (en, ru, de, ...) via macOS NaturalLanguage
-  local l; l=$(osascript -l JavaScript -e 'function run(a){ObjC.import("NaturalLanguage");var r=$.NLLanguageRecognizer.alloc.init;r.processString(a[0]);var l=ObjC.unwrap(r.dominantLanguage),p=ObjC.deepUnwrap(r.languageHypothesesWithMaximum(9));if(/^(bg|mk|sr|be|kk)$/.test(l))l=(p.uk||0)>(p.ru||0)?"uk":"ru";return l}' " $1" 2>/dev/null)
+lang() { # language of $1 (en, ru, de, ...); call it in $(...), it changes the shell's locale and options
+  local o=${LC_ALL-} w c=0 n=0 l other=$'*[\xC3-\xDF\xE0\xE1\xE3-\xEF]*'
+  LC_ALL=C; set -f # by bytes: in UTF-8 Cyrillic letters start with D0/D1, punctuation with C2/E2, emoji with F0
+  for w in $1; do # by words, so Russian full of English terms stays Russian
+    [[ $w == *[a-zA-Z$'\xD0\xD1']* ]] || continue
+    n=$((n+1)); [[ $w == *[$'\xD0\xD1']* ]] && c=$((c+1))
+  done
+  if [ "$c" -gt 0 ] && [ $((c*4)) -ge "$n" ]; then
+    case $1 in *$'\xD1\x96'*|*$'\xD1\x97'*|*$'\xD1\x94'*|*$'\xD2\x91'*|*$'\xD0\x86'*|*$'\xD0\x87'*|*$'\xD0\x84'*|*$'\xD2\x90'*) echo uk ;; *) echo ru ;; esac # і ї є ґ
+    return
+  fi
+  [[ $1 == $other ]] || { echo en; return; }
+  LC_ALL=$o # anything else: macOS NaturalLanguage, ~0.1 s
+  l=$(osascript -l JavaScript -e 'function run(a){ObjC.import("NaturalLanguage");var r=$.NLLanguageRecognizer.alloc.init;r.processString(a[0]);var l=ObjC.unwrap(r.dominantLanguage),p=ObjC.deepUnwrap(r.languageHypothesesWithMaximum(9));if(/^(bg|mk|sr|be|kk)$/.test(l))l=(p.uk||0)>(p.ru||0)?"uk":"ru";return l}' " $1" 2>/dev/null)
   echo "${l%%-*}"
 }
 
@@ -54,26 +66,62 @@ model() { # Piper model file for language $1 (empty if none installed)
   ls "$V/$1"_*"$(pick "$1")"*.onnx 2>/dev/null | head -1
 }
 
+say_refresh() { # cache the voice list: `say -v '?'` takes over a second
+  mkdir -p "$D" && say -v '?' > "$L.$$" && mv -f "$L.$$" "$L"
+}
+
 say_voice() { # best installed `say` voice for language $1; `say` silently falls back if a name is unknown
   local n; n=$(pick "$1")
-  if [ -n "$n" ] && say -v '?' | grep -q "^$n "; then echo "$n"; return; fi
-  say -v '?' | awk -v l="$1" '
+  [ -s "$L" ] || say_refresh
+  if [ -n "$n" ] && grep -q "^$n " "$L"; then echo "$n"; return; fi
+  awk -v l="$1" '
     BEGIN { good=" Samantha Milena Anna Thomas Mónica Alice Luciana Kyoko Tingting Lesya Ellen Xander Yuna Satu Zuzana Sara Melina Daria Montse Majed Piya Damayanti Amira " }
     match($0, / +[a-z]+_[A-Z0-9]+ +#/) {
       n=substr($0,1,RSTART-1); split(substr($0,RSTART,RLENGTH),a,"_"); gsub(/ /,"",a[1]); if (a[1]!=l) next
       b=n; sub(/ \(.*/,"",b)
       s=1; if (n !~ /\(/) s=2; if (index(good," " b " ")) s=3; if (n ~ /Premium|Enhanced/) s=4
       if (s>best) { best=s; v=n } }
-    END { print v }'
+    END { print v }' "$L"
+}
+
+# Voice server (bin/govori-server.py): keeps Piper models in memory while voice mode is in use.
+server_send() { # ask it to speak: $1 model, $2 length scale, $3 text; prints ok or err, nothing if it is not running
+  [ -S "$D/piper.sock" ] && (cd "$D" && printf '%s\n%s\n%s\0' "$1" "$2" "$3" | nc -U piper.sock 2>/dev/null)
+}
+
+server_start() { # in the background, voice $1 first, then one per installed language; a second copy exits by itself
+  local l m a=()
+  [ -n "${1:-}" ] && a=("$1")
+  command -v piper >/dev/null || return 1
+  for l in $(ls "$V" 2>/dev/null | sed -n 's/_.*\.onnx$//p' | sort -u); do
+    m=$(model "$l"); [ -n "$m" ] && a+=("$m")
+  done
+  [ ${#a[@]} -gt 0 ] || return 1
+  nohup "$(dirname "$(readlink -f "$(command -v piper)")")/python" -I "${0%/*}/govori-server.py" "$D" "${GOVORI_IDLE:-900}" "${a[@]}" </dev/null >/dev/null 2>&1 &
+}
+
+server_stop() {
+  [ -S "$D/piper.sock" ] && (cd "$D" && printf 'quit\0' | nc -U piper.sock) >/dev/null 2>&1 &
+}
+
+piper_talk() { # $1 model, $2 length scale, $3 text
+  local i r w="$D/$$.wav"
+  r=$(server_send "$@")
+  if [ -z "$r" ] && [ -n "${VOICE_ON:-}" ] && server_start "$1"; then # never started just for `test` while voice mode is off
+    for i in {1..50}; do
+      sleep 0.1; r=$(server_send "$@"); [ -n "$r" ] && break
+    done
+  fi
+  [ "$r" = ok ] && return
+  piper -m "$1" --length-scale "$2" -f "$w" <<<"$3" && afplay "$w"; rm -f "$w"
 }
 
 talk() { # speak $1 aloud; replaces whatever is still playing
-  local t=$1 l p w v r=${GOVORI_RATE:-210}
+  local t=$1 l p v r=${GOVORI_RATE:-210}
   l=$(lang "$t"); p=$(model "$l")
   pkill -x say; pkill -x afplay
   if [ -n "$p" ] && command -v piper >/dev/null; then
-    w=$(mktemp -t govori)
-    { piper -m "$p" --length-scale "$(awk -v r="$r" 'BEGIN{printf "%.2f", 180/r}')" -f "$w" <<<"$t" && afplay "$w"; rm -f "$w"; } >/dev/null 2>&1 &
+    piper_talk "$p" "$(awk -v r="$r" 'BEGIN{printf "%.2f", 180/r}')" "$t" >/dev/null 2>&1 &
   else
     v=$(say_voice "$l")
     say ${v:+-v "$v"} -r "$r" -- "$t" >/dev/null 2>&1 &
@@ -83,15 +131,16 @@ talk() { # speak $1 aloud; replaces whatever is still playing
 jget() { plutil -extract "$1" raw -o - - 2>/dev/null <<<"$2"; } # field $1 of JSON $2
 
 hook_sid() { # session id: from the hook's JSON on stdin, else from the environment
-  local s; s=$(jget session_id "$1"); echo "${s:-${CLAUDE_CODE_SESSION_ID:-}}"
+  local re='"session_id": *"([^"]+)"' # can't match inside a JSON string: quotes are escaped there
+  if [[ $1 =~ $re ]]; then echo "${BASH_REMATCH[1]}"; else echo "${CLAUDE_CODE_SESSION_ID:-}"; fi
 }
 
 speak() { # $1: JSON from the Stop hook
   is_on "$(hook_sid "$1")" || return 0
-  local m
+  local m VOICE_ON=1
   m=$'\n'$(jget last_assistant_message "$1") || return 0
   [[ $m == *$'\n🔊'* ]] || return 0
-  m=$(printf '%s' "${m##*$'\n'🔊}" | tr -d '`*#')
+  m=${m##*$'\n'🔊}; m=${m//[\`*#]/}
   [ -n "${m//[[:space:]]/}" ] && talk "$m"
   return 0
 }
@@ -99,8 +148,8 @@ speak() { # $1: JSON from the Stop hook
 case "${1:-toggle}" in
   hook-start) j=$(cat); is_on "$(hook_sid "$j")" && rules ;;
   hook-stop)  speak "$(cat)" ;;
-  on)     set_flag on || exit 1; echo "Voice replies ON for $(scope_name)."; rules ;;
-  off)    set_flag off || exit 1; echo "Voice replies OFF for $(scope_name). Stop adding the 🔊 block to replies." ;;
+  on)     set_flag on || exit 1; (say_refresh >/dev/null 2>&1 &); server_start; echo "Voice replies ON for $(scope_name)."; rules ;;
+  off)    set_flag off || exit 1; server_stop; echo "Voice replies OFF for $(scope_name). Stop adding the 🔊 block to replies." ;;
   toggle) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then "$0" off; else "$0" on; fi ;;
   status) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then echo "on, $(scope_name)"; else echo "off, $(scope_name)"; fi ;;
   voices) ls "$V" 2>/dev/null | sed -n 's/\.onnx$//p' ;;
