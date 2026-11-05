@@ -1,16 +1,15 @@
-![govori](assets/cover.jpg)
+# govori
+
+Spoken replies for Claude Code on macOS. Claude ends each reply with a short `🔊` line, and a TTS engine reads it aloud. Off by default, zero context cost until you turn it on.
 
 ```bash
 claude plugin marketplace add nicknotknack/claude-govori && claude plugin install govori@govori
 ```
 
+![govori](assets/cover.jpg)
+
 Restart Claude Code, then type `/govori`.
 
-# govori
-
-Spoken replies for Claude Code on macOS. Claude ends each reply with a short `🔊` line, and a TTS engine reads it aloud. Off by default, zero context cost until you turn it on.
-
-Engines: **[Piper](https://github.com/OHF-Voice/piper1-gpl)** (free, offline, natural voices) when a voice for the reply's language is installed, otherwise macOS `say`.
 
 ## Better voices (optional)
 
