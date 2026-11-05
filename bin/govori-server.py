@@ -1,7 +1,7 @@
 """Keeps Piper voices in memory: a reply starts in ~0.1 s instead of the ~1.5 s a fresh `piper` needs to load its model.
 
-Started by bin/govori only once voice mode is on; exits after <idle seconds> without requests.
-Usage: python govori-server.py <state dir> <idle seconds> [model.onnx ...]
+Started by bin/govori only once voice mode is on; exits after 15 minutes without requests.
+Usage: python govori-server.py <state dir> [model.onnx ...]
 Request: "<model>\n<length scale>\n<text>\0", or "quit\0". Answer: "ok\n" once playback has started, else "err\n".
 """
 import fcntl
@@ -12,6 +12,7 @@ import sys
 import wave
 
 SOCK, WAV, LOCK = "piper.sock", "piper.wav", "piper.lock"  # relative: socket paths are limited to 104 bytes
+IDLE = 900  # seconds
 voices = {}
 player = None
 
@@ -49,9 +50,9 @@ def read_request(conn):
     return buf.rstrip(b"\0").decode()
 
 
-def serve(sock, idle, preload):
+def serve(sock, preload):
     while True:
-        sock.settimeout(0 if preload else idle)
+        sock.settimeout(0 if preload else IDLE)
         try:
             conn, _ = sock.accept()
         except (socket.timeout, BlockingIOError):
@@ -80,7 +81,7 @@ def serve(sock, idle, preload):
 
 
 def main():
-    state_dir, idle, models = sys.argv[1], float(sys.argv[2]), sys.argv[3:]
+    state_dir, models = sys.argv[1], sys.argv[2:]
     os.chdir(state_dir)
     os.umask(0o077)
     lock = open(LOCK, "w")
@@ -100,7 +101,7 @@ def main():
     sock.bind(SOCK)
     sock.listen(8)  # bound before loading, so early requests wait here instead of loading a second copy
     try:
-        serve(sock, idle, models)
+        serve(sock, models)
     finally:
         for path in (SOCK, WAV):
             try:

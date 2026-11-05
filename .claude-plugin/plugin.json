@@ -1,10 +1,10 @@
 {
   "name": "govori",
   "displayName": "Govori",
-  "version": "0.4.0",
-  "description": "Spoken replies for Claude Code on macOS. Claude ends each reply with a short voice line, read aloud by Piper (offline neural TTS) or the built-in say. Toggle with /govori.",
+  "version": "0.5.0",
+  "description": "Spoken replies for Claude Code on macOS. Claude ends each reply with a short voice line, read aloud by Piper (offline neural TTS). Toggle with /govori.",
   "author": { "name": "nicknotknack" },
   "repository": "https://github.com/nicknotknack/claude-govori",
   "license": "MIT",
-  "keywords": ["voice", "tts", "say", "macos", "speech"]
+  "keywords": ["voice", "tts", "piper", "macos", "speech"]
 }

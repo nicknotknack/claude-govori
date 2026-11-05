@@ -1,26 +1,19 @@
 #!/bin/bash
-# govori: spoken Claude replies. Engine: Piper if a voice for the reply's language is installed, else macOS `say`.
+# govori: spoken Claude replies, synthesized by Piper. A reply in a language with no installed voice stays silent.
 PATH="$HOME/.local/bin:$PATH"
-D="$HOME/.claude/govori"; ON="$D/on"; S="$D/sessions"; V="$D/voices"; L="$D/say-voices"
+D="$HOME/.claude/govori"; S="$D/sessions"; V="$D/voices"
 
-# State: by default voice is on per session (flag file $S/<session id>). With GOVORI_SCOPE=global
-# it is one flag file $ON shared by every session. Hooks get the id on stdin, commands via env.
-global() { [ "${GOVORI_SCOPE:-}" = global ]; }
-
-flag() { # flag file for session id $1 in the current scope; fails if there is no usable id
-  if global; then echo "$ON"; return; fi
-  [[ $1 =~ ^[A-Za-z0-9_-]+$ ]] || return 1
-  echo "$S/$1"
+# State: voice is on per session (flag file $S/<session id>). Hooks get the id on stdin, commands via env.
+flag() { # flag file for session id $1; fails if there is no usable id
+  [[ $1 =~ ^[A-Za-z0-9_-]+$ ]] && echo "$S/$1"
 }
 
 is_on() { local f; f=$(flag "$1") && [ -f "$f" ]; }
 
-scope_name() { if global; then echo "ALL sessions (GOVORI_SCOPE=global)"; else echo "this session"; fi; }
-
 set_flag() { # $1 on|off
-  local f; f=$(flag "${CLAUDE_CODE_SESSION_ID:-}") || { echo "govori: no session id. Run it inside Claude Code, or set GOVORI_SCOPE=global." >&2; return 1; }
+  local f; f=$(flag "${CLAUDE_CODE_SESSION_ID:-}") || { echo "govori: no session id. Run it inside Claude Code." >&2; return 1; }
   if [ "$1" = on ]; then
-    mkdir -p "$(dirname "$f")" && : > "$f" || return 1
+    mkdir -p "$S" && : > "$f" || return 1
     find "$S" -type f -mtime +14 -delete 2>/dev/null
   else
     rm -f "$f"
@@ -57,32 +50,22 @@ lang() { # language of $1 (en, ru, de, ...); call it in $(...), it changes the s
   echo "${l%%-*}"
 }
 
-pick() { # preferred voice name for language $1 from GOVORI_VOICES="ru=ruslan,en=Daniel"
+pick() { # preferred voice name for language $1 from GOVORI_VOICES="ru=ruslan,en=ryan"
   local kv IFS=,
   for kv in ${GOVORI_VOICES:-}; do [ "${kv%%=*}" = "$1" ] && echo "${kv#*=}"; done
 }
 
-model() { # Piper model file for language $1 (empty if none installed)
-  ls "$V/$1"_*"$(pick "$1")"*.onnx 2>/dev/null | head -1
+voices() { ls "$V" 2>/dev/null | sed -n 's/\.onnx$//p'; }
+
+model() { # Piper model file for language $1: the preferred voice, else the first installed; empty if none
+  { ls "$V/$1"_*"$(pick "$1")"*.onnx || ls "$V/$1"_*.onnx; } 2>/dev/null | head -1
 }
 
-say_refresh() { # cache the voice list: `say -v '?'` takes over a second
-  mkdir -p "$D" && say -v '?' > "$L.$$" && mv -f "$L.$$" "$L"
-}
+has_piper() { command -v piper >/dev/null || { echo "govori: Piper is not installed. Run: pipx install piper-tts" >&2; return 1; }; }
 
-say_voice() { # best installed `say` voice for language $1; `say` silently falls back if a name is unknown
-  local n; n=$(pick "$1")
-  [ -s "$L" ] || say_refresh
-  if [ -n "$n" ] && grep -q "^$n " "$L"; then echo "$n"; return; fi
-  awk -v l="$1" '
-    BEGIN { good=" Samantha Milena Anna Thomas Mónica Alice Luciana Kyoko Tingting Lesya Ellen Xander Yuna Satu Zuzana Sara Melina Daria Montse Majed Piya Damayanti Amira " }
-    match($0, / +[a-z]+_[A-Z0-9]+ +#/) {
-      n=substr($0,1,RSTART-1); split(substr($0,RSTART,RLENGTH),a,"_"); gsub(/ /,"",a[1]); if (a[1]!=l) next
-      b=n; sub(/ \(.*/,"",b)
-      s=1; if (n !~ /\(/) s=2; if (index(good," " b " ")) s=3; if (n ~ /Premium|Enhanced/) s=4
-      if (s>best) { best=s; v=n } }
-    END { print v }' "$L"
-}
+has_voices() { [ -n "$(voices)" ] || { echo "govori: no voices installed. Run: /govori get ru_RU-denis-medium en_US-ryan-medium" >&2; return 1; }; }
+
+piper_python() { echo "$(dirname "$(readlink -f "$(command -v piper)")")/python"; }
 
 # Voice server (bin/govori-server.py): keeps Piper models in memory while voice mode is in use.
 server_send() { # ask it to speak: $1 model, $2 length scale, $3 text; prints ok or err, nothing if it is not running
@@ -92,12 +75,10 @@ server_send() { # ask it to speak: $1 model, $2 length scale, $3 text; prints ok
 server_start() { # in the background, voice $1 first, then one per installed language; a second copy exits by itself
   local l m a=()
   [ -n "${1:-}" ] && a=("$1")
-  command -v piper >/dev/null || return 1
-  for l in $(ls "$V" 2>/dev/null | sed -n 's/_.*\.onnx$//p' | sort -u); do
+  for l in $(voices | sed 's/_.*//' | sort -u); do
     m=$(model "$l"); [ -n "$m" ] && a+=("$m")
   done
-  [ ${#a[@]} -gt 0 ] || return 1
-  nohup "$(dirname "$(readlink -f "$(command -v piper)")")/python" -I "${0%/*}/govori-server.py" "$D" "${GOVORI_IDLE:-900}" "${a[@]}" </dev/null >/dev/null 2>&1 &
+  nohup "$(piper_python)" -I "${0%/*}/govori-server.py" "$D" "${a[@]}" </dev/null >/dev/null 2>&1 &
 }
 
 server_stop() {
@@ -117,15 +98,12 @@ piper_talk() { # $1 model, $2 length scale, $3 text
 }
 
 talk() { # speak $1 aloud; replaces whatever is still playing
-  local t=$1 l p v r=${GOVORI_RATE:-210}
-  l=$(lang "$t"); p=$(model "$l")
-  pkill -x say; pkill -x afplay
-  if [ -n "$p" ] && command -v piper >/dev/null; then
-    piper_talk "$p" "$(awk -v r="$r" 'BEGIN{printf "%.2f", 180/r}')" "$t" >/dev/null 2>&1 &
-  else
-    v=$(say_voice "$l")
-    say ${v:+-v "$v"} -r "$r" -- "$t" >/dev/null 2>&1 &
-  fi
+  local l p
+  has_piper || return 1
+  l=$(lang "$1"); p=$(model "$l")
+  [ -n "$p" ] || { echo "govori: no voice for language '$l'. List them with: /govori get" >&2; return 1; }
+  pkill -x afplay
+  piper_talk "$p" "$(awk -v s="${GOVORI_SPEED:-1.17}" 'BEGIN{printf "%.2f", 1/s}')" "$1" >/dev/null 2>&1 &
 }
 
 jget() { plutil -extract "$1" raw -o - - 2>/dev/null <<<"$2"; } # field $1 of JSON $2
@@ -148,12 +126,12 @@ speak() { # $1: JSON from the Stop hook
 case "${1:-toggle}" in
   hook-start) j=$(cat); is_on "$(hook_sid "$j")" && rules ;;
   hook-stop)  speak "$(cat)" ;;
-  on)     set_flag on || exit 1; (say_refresh >/dev/null 2>&1 &); server_start; echo "Voice replies ON for $(scope_name)."; rules ;;
-  off)    set_flag off || exit 1; server_stop; echo "Voice replies OFF for $(scope_name). Stop adding the 🔊 block to replies." ;;
+  on)     has_piper && has_voices && set_flag on || exit 1; server_start; echo "Voice replies ON for this session."; rules ;;
+  off)    set_flag off || exit 1; server_stop; echo "Voice replies OFF for this session. Stop adding the 🔊 block to replies." ;;
   toggle) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then "$0" off; else "$0" on; fi ;;
-  status) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then echo "on, $(scope_name)"; else echo "off, $(scope_name)"; fi ;;
-  voices) ls "$V" 2>/dev/null | sed -n 's/\.onnx$//p' ;;
-  get)    shift; mkdir -p "$V"; "$(dirname "$(readlink -f "$(command -v piper)")")/python" -m piper.download_voices --data-dir "$V" "$@" ;;
-  test)   shift; talk "${*:-All done, tests are green.}"; wait ;;
+  status) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then echo on; else echo off; fi ;;
+  voices) voices ;;
+  get)    has_piper || exit 1; shift; mkdir -p "$V"; "$(piper_python)" -m piper.download_voices --data-dir "$V" "$@" ;;
+  test)   shift; talk "${*:-All done, tests are green.}" || exit 1; wait ;;
   *)      echo "usage: govori [on|off|status|voices|get <voice>...|test [text]]"; exit 1 ;;
 esac
