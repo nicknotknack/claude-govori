@@ -6,7 +6,7 @@ Spoken replies for Claude Code on macOS. Claude ends each reply with a short `ðŸ
 claude plugin marketplace add nicknotknack/claude-govori && claude plugin install govori@govori
 ```
 
-Restart Claude Code and type `/govori`. It walks you through the rest and lets you hear each voice, pitch and speed before you keep it.
+Then restart Claude Code and type `/govori`
 
 ![govori](assets/cover.jpg)
 
