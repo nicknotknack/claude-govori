@@ -12,7 +12,7 @@ End EVERY reply with this block, as the very last thing in the message:
 - Short and to the point: result or answer only. No greetings, filler or step-by-step recap.
 - Plain speakable text: no markdown, code, paths or URLs, unless the user asks you to read them out.
 - If the user asks you to dictate or read aloud something (code, text, list, explanation), put exactly that after 🔊; it may span several lines.
-- Everything above the block is the normal reply.
+- Everything above the block is the normal reply. Never repeat it in the block: if the whole reply is one short sentence, write only the 🔊 line.
 R
 }
 

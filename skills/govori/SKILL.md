@@ -6,4 +6,4 @@ disable-model-invocation: true
 allowed-tools: Bash("${CLAUDE_PLUGIN_ROOT}/bin/govori" *)
 ---
 
-Run `"${CLAUDE_PLUGIN_ROOT}/bin/govori" $ARGUMENTS` and follow its output exactly. Add nothing else; confirm in one short line.
+Run `"${CLAUDE_PLUGIN_ROOT}/bin/govori" $ARGUMENTS` and follow its output exactly. Confirm in one short line, written once: while voice mode is on, that line is the 🔊 block itself, with no plain copy above it.
