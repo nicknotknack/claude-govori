@@ -23,6 +23,17 @@ If the machine has `GOVORI_*` keys in `env` of `~/.claude/settings.json`, from a
 - `install-piper` fails with `pipx is required`: install Homebrew or pipx, then run `/govori` again.
 - No sound: run `/govori voices` and `/govori test`, check the system volume. A language with no installed voice stays silent.
 
+## How it works
+
+The README stays minimal, so details live here.
+
+- **Hooks:** `SessionStart` prints the rules when the flag exists. `Stop` takes everything from the last `🔊` line of `last_assistant_message`, detects its language and speaks it in the background. No marker, no speech. Stale session flags are deleted after 14 days.
+- **Settings:** `~/.claude/govori/config` holds `scope` (`session` or `global`), `speed` (0.5 to 3, `1` is natural), `pitch` (0.7 to 1.3, `1` is natural), `voices` (e.g. `ru=dmitri,en=ryan`, part of a voice name per language; if nothing matches, the first installed voice of that language) and `setup` (`done` after the first run). Delete the file to run setup again.
+- **Voice process:** speech goes through `bin/govori-server.py` over the socket `~/.claude/govori/piper.sock`. If it can't answer, a one-shot `piper` takes over. It starts on `/govori on`, or on the first spoken reply if the flag was already set, and exits on `/govori off` or after 15 minutes without speech. `/govori test` uses it when it's running but never starts it.
+- **Speed and memory, on an M1 Pro:** playback starts 0.2–0.3 s after the reply with the process running, about 1.4 s without. Memory is about 150 MB per language, one voice each; about 280 MB for Russian and English. Almost no CPU while idle.
+- **Several sessions** share one process. A new reply from any session cuts off the one playing, so if sessions finish almost together, only the last is heard.
+- **Language:** Russian with English words (`git`, `Projects`) stays Russian while at least a quarter of the words are Cyrillic. ASCII-only text is treated as English, so German or Spanish with no accented letters is read by the English voice. Anything else goes through macOS NaturalLanguage, which adds about 0.1 s.
+
 ## Notes for contributors
 
 - Code is `bin/govori` plus the voice server `bin/govori-server.py`; keep both small. Dialogs live in `skills/govori/setup.md`, which only the skill reads. The server must only ever be started while voice mode is on (`on`, or a Stop hook whose session has the flag). State is a flag file per session, `~/.claude/govori/sessions/<session id>`, or the single file `~/.claude/govori/on` with `scope=global`. Settings are in `~/.claude/govori/config`, voices in `~/.claude/govori/voices`. Hooks read `session_id` from stdin JSON, commands from `$CLAUDE_CODE_SESSION_ID`.
