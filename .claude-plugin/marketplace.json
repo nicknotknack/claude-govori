@@ -6,7 +6,7 @@
     {
       "name": "govori",
       "source": "./",
-      "description": "Claude ends replies with a short voice line, read aloud by Piper. Toggle with /govori."
+      "description": "Claude ends replies with a short voice line, read aloud by Piper. Toggle with /govori, change it with /govori settings."
     }
   ]
 }

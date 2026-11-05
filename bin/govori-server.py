@@ -1,8 +1,8 @@
 """Keeps Piper voices in memory: a reply starts in ~0.1 s instead of the ~1.5 s a fresh `piper` needs to load its model.
 
 Started by bin/govori only once voice mode is on; exits after 15 minutes without requests.
-Usage: python govori-server.py <state dir> [model.onnx ...]
-Request: "<model>\n<length scale>\n<text>\0", or "quit\0". Answer: "ok\n" once playback has started, else "err\n".
+Usage: python govori-server.py <state dir> [model.onnx ...], or --retune <file.wav> <pitch>
+Request: "<model>\n<length scale>\n<pitch>\n<text>\0", or "quit\0". Answer: "ok\n" once playback has started, else "err\n".
 """
 import fcntl
 import os
@@ -25,7 +25,17 @@ def voice(model):
     return voices[model]
 
 
-def speak(model, scale, text):
+def retune(path, pitch):
+    """Plays the file lower or higher by changing its sample rate. That also changes its duration, so the caller scales the length."""
+    with wave.open(path, "rb") as r:
+        params, frames = r.getparams(), r.readframes(r.getnframes())
+    with wave.open(path, "wb") as w:
+        w.setparams(params)
+        w.setframerate(round(params.framerate * pitch))
+        w.writeframes(frames)
+
+
+def speak(model, scale, pitch, text):
     global player
     from piper.config import SynthesisConfig
 
@@ -37,6 +47,8 @@ def speak(model, scale, text):
     with wave.open(WAV, "wb") as w:
         for i, line in enumerate(lines):  # line by line, like the piper CLI
             v.synthesize_wav(line, w, syn_config=cfg, set_wav_format=i == 0)
+    if float(pitch) != 1:
+        retune(WAV, float(pitch))
     player = subprocess.Popen(["afplay", WAV], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
@@ -71,7 +83,7 @@ def serve(sock, preload):
                 if request == "quit":
                     conn.sendall(answer)
                     return
-                speak(*request.split("\n", 2))
+                speak(*request.split("\n", 3))
             except Exception:
                 answer = b"err\n"  # the client falls back to a one-shot piper
             try:
@@ -81,6 +93,8 @@ def serve(sock, preload):
 
 
 def main():
+    if sys.argv[1] == "--retune":
+        return retune(sys.argv[2], float(sys.argv[3]))
     state_dir, models = sys.argv[1], sys.argv[2:]
     os.chdir(state_dir)
     os.umask(0o077)
