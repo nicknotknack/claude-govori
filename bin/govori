@@ -77,6 +77,21 @@ model() { # Piper model file for language $1: the preferred voice, else the firs
   { ls "$V/$1"_*"$(pick "$1")"*.onnx || ls "$V/$1"_*.onnx; } 2>/dev/null | head -1
 }
 
+extra_voices() { # installed voices that are not the chosen one for their language
+  local v l
+  for v in $(voices); do
+    l=${v%%_*}
+    [ -n "$(pick "$l")" ] && [ "$(model "$l")" = "$V/$v.onnx" ] || echo "$v"
+  done
+}
+
+remove_voices() { # checks every name before deleting anything
+  local v
+  [ $# -gt 0 ] || { echo "usage: govori remove <voice>..." >&2; return 1; }
+  for v in "$@"; do [[ $v =~ ^[A-Za-z0-9_-]+$ ]] || { echo "govori: bad voice name '$v'." >&2; return 1; }; done
+  for v in "$@"; do rm -f "$V/$v.onnx" "$V/$v.onnx.json"; done
+}
+
 has_piper() { command -v piper >/dev/null || { echo "govori: Piper is not installed. Run: pipx install piper-tts" >&2; return 1; }; }
 
 has_voices() { [ -n "$(voices)" ] || { echo "govori: no voices installed. Run: /govori get ru_RU-dmitri-medium en_US-ryan-medium" >&2; return 1; }; }
@@ -203,7 +218,8 @@ case "${1:-toggle}" in
   voices) voices ;;
   catalog) has_piper || exit 1; "$0" get | grep "^${2:-none}_" ;;
   get)    has_piper || exit 1; shift; mkdir -p "$V"; "$(piper_python)" -m piper.download_voices --data-dir "$V" "$@" ;;
-  remove) [[ ${2:-} =~ ^[A-Za-z0-9_-]+$ ]] || { echo "usage: govori remove <voice>" >&2; exit 1; }; rm -f "$V/$2.onnx" "$V/$2.onnx.json" ;;
+  extra)  extra_voices ;;
+  remove) shift; remove_voices "$@" ;;
   test)   shift; talk "${*:-All done, tests are green.}" || exit 1; wait ;;
-  *)      echo "usage: govori [on|off|status|settings|set <option> <value>|voices|catalog <language>|get <voice>...|remove <voice>|test [text]]"; exit 1 ;;
+  *)      echo "usage: govori [on|off|status|settings|set <option> <value>|voices|catalog <language>|get <voice>...|extra|remove <voice>...|test [text]]"; exit 1 ;;
 esac

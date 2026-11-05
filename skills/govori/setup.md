@@ -18,6 +18,12 @@ Used by both flows. The choice is lasting: it sets what every future `/govori` d
 
 Run `govori set scope session` or `govori set scope global`.
 
+## Extra voices
+
+Used by both flows, after voices are chosen. Run `govori extra`, which lists installed voices that are not the chosen one for their language. If it prints nothing, skip this.
+
+Otherwise ask whether to delete them, naming each and saying each takes about 60 MB: "Delete (Recommended)" or "Keep". A voice of a language not chosen is on the list too, so say that replies in that language will go silent. On "Delete", run `govori remove <voice>...`. "Keep" or a dismissed dialog just moves on, and does not stop setup.
+
 ## Tuning speed or pitch
 
 Used by both flows, so the user hears every value and adjusts it in one click:
@@ -45,9 +51,10 @@ The `SETUP NEEDED` line says whether Piper is installed and which voices already
       - Otherwise run `govori catalog <code>` and offer up to 4, preferring `-medium`. If it prints nothing, say there is no voice for that language and skip it.
    2. Say it downloads about 60 MB unless installed, then run `govori get <voice>`, `govori set voice <code> <voice>` and `govori test "<a short sentence in that language>"`.
    3. Ask "Keep this voice?" with "Keep" and "Try another". On "Try another", run `govori remove <voice>` if this flow downloaded it, then go back to the voice question.
-5. **Pitch.** Ask: "1: natural (Recommended)", "0.9: lower", "0.8: much lower". Other accepts 0.7 to 1.3. Then tune it (see "Tuning speed or pitch").
-6. **Speed.** Ask: "1.17: slightly fast (Recommended)", "1: natural", "1.4: fast". Other accepts 0.5 to 3. Then tune it the same way.
-7. **Finish.** Run `govori setup-done` and follow its output. Confirm in one line that it works and that `/govori settings` changes everything later. With scope `global`, add that sessions already open need a restart.
+5. **Extra voices.** Offer to delete them (see "Extra voices").
+6. **Pitch.** Ask: "1: natural (Recommended)", "0.9: lower", "0.8: much lower". Other accepts 0.7 to 1.3. Then tune it (see "Tuning speed or pitch").
+7. **Speed.** Ask: "1.17: slightly fast (Recommended)", "1: natural", "1.4: fast". Other accepts 0.5 to 3. Then tune it the same way.
+8. **Finish.** Run `govori setup-done` and follow its output. Confirm in one line that it works and that `/govori settings` changes everything later. With scope `global`, add that sessions already open need a restart.
 
 ## Settings
 
@@ -62,6 +69,6 @@ If the user dismisses the dialog, change nothing. Otherwise apply only what chan
 
 - Scope: `govori set scope <session|global>`.
 - Speed or pitch: tune it (see "Tuning speed or pitch"), one at a time.
-- Voice: `govori set voice <code> <voice>`, then `govori test` in that language. For "Another voice", follow step 4 of "First run". The same step adds a new language if the user asks for one in "Other".
+- Voice: `govori set voice <code> <voice>`, then `govori test` in that language. For "Another voice", follow step 4 of "First run". The same step adds a new language if the user asks for one in "Other". After any voice change, offer to delete extra voices (see "Extra voices").
 
 Then confirm in one line what changed: voice, pitch and speed apply from the next reply. A scope change takes effect in sessions already open only after they restart.
