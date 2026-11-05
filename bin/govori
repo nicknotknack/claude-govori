@@ -1,0 +1,80 @@
+#!/bin/bash
+# govori: spoken Claude replies. Engine: Piper if a voice for the reply's language is installed, else macOS `say`.
+PATH="$HOME/.local/bin:$PATH"
+D="$HOME/.claude/govori"; ON="$D/on"; V="$D/voices"
+
+rules() { cat <<'R'
+Voice mode is ON: the last block of each reply is read aloud by a text-to-speech engine.
+End EVERY reply with this block, as the very last thing in the message:
+
+🔊 <the gist in one or two short plain sentences, in the user's language>
+
+- Short and to the point: result or answer only. No greetings, filler or step-by-step recap.
+- Plain speakable text: no markdown, code, paths or URLs, unless the user asks you to read them out.
+- If the user asks you to dictate or read aloud something (code, text, list, explanation), put exactly that after 🔊; it may span several lines.
+- Everything above the block is the normal reply.
+R
+}
+
+lang() { # dominant language of $1 (en, ru, de, ...) via macOS NaturalLanguage
+  local l; l=$(osascript -l JavaScript -e 'function run(a){ObjC.import("NaturalLanguage");var r=$.NLLanguageRecognizer.alloc.init;r.processString(a[0]);var l=ObjC.unwrap(r.dominantLanguage),p=ObjC.deepUnwrap(r.languageHypothesesWithMaximum(9));if(/^(bg|mk|sr|be|kk)$/.test(l))l=(p.uk||0)>(p.ru||0)?"uk":"ru";return l}' " $1" 2>/dev/null)
+  echo "${l%%-*}"
+}
+
+pick() { # preferred voice name for language $1 from GOVORI_VOICES="ru=ruslan,en=Daniel"
+  local kv IFS=,
+  for kv in ${GOVORI_VOICES:-}; do [ "${kv%%=*}" = "$1" ] && echo "${kv#*=}"; done
+}
+
+model() { # Piper model file for language $1 (empty if none installed)
+  ls "$V/$1"_*"$(pick "$1")"*.onnx 2>/dev/null | head -1
+}
+
+say_voice() { # best installed `say` voice for language $1; `say` silently falls back if a name is unknown
+  local n; n=$(pick "$1")
+  if [ -n "$n" ] && say -v '?' | grep -q "^$n "; then echo "$n"; return; fi
+  say -v '?' | awk -v l="$1" '
+    BEGIN { good=" Samantha Milena Anna Thomas Mónica Alice Luciana Kyoko Tingting Lesya Ellen Xander Yuna Satu Zuzana Sara Melina Daria Montse Majed Piya Damayanti Amira " }
+    match($0, / +[a-z]+_[A-Z0-9]+ +#/) {
+      n=substr($0,1,RSTART-1); split(substr($0,RSTART,RLENGTH),a,"_"); gsub(/ /,"",a[1]); if (a[1]!=l) next
+      b=n; sub(/ \(.*/,"",b)
+      s=1; if (n !~ /\(/) s=2; if (index(good," " b " ")) s=3; if (n ~ /Premium|Enhanced/) s=4
+      if (s>best) { best=s; v=n } }
+    END { print v }'
+}
+
+talk() { # speak $1 aloud; replaces whatever is still playing
+  local t=$1 l p w v r=${GOVORI_RATE:-210}
+  l=$(lang "$t"); p=$(model "$l")
+  pkill -x say; pkill -x afplay
+  if [ -n "$p" ] && command -v piper >/dev/null; then
+    w=$(mktemp -t govori)
+    { piper -m "$p" --length-scale "$(awk -v r="$r" 'BEGIN{printf "%.2f", 180/r}')" -f "$w" <<<"$t" && afplay "$w"; rm -f "$w"; } >/dev/null 2>&1 &
+  else
+    v=$(say_voice "$l")
+    say ${v:+-v "$v"} -r "$r" -- "$t" >/dev/null 2>&1 &
+  fi
+}
+
+speak() { # stdin: JSON from the Stop hook
+  [ -f "$ON" ] || return 0
+  local m
+  m=$'\n'$(plutil -extract last_assistant_message raw -o - - 2>/dev/null) || return 0
+  [[ $m == *$'\n🔊'* ]] || return 0
+  m=$(printf '%s' "${m##*$'\n'🔊}" | tr -d '`*#')
+  [ -n "${m//[[:space:]]/}" ] && talk "$m"
+  return 0
+}
+
+case "${1:-toggle}" in
+  hook-start) [ -f "$ON" ] && rules ;;
+  hook-stop)  speak ;;
+  on)     mkdir -p "$D" && : > "$ON"; echo "Voice replies ON."; rules ;;
+  off)    rm -f "$ON"; echo "Voice replies OFF. Stop adding the 🔊 block to replies." ;;
+  toggle) if [ -f "$ON" ]; then "$0" off; else "$0" on; fi ;;
+  status) [ -f "$ON" ] && echo on || echo off ;;
+  voices) ls "$V" 2>/dev/null | sed -n 's/\.onnx$//p' ;;
+  get)    shift; mkdir -p "$V"; "$(dirname "$(readlink -f "$(command -v piper)")")/python" -m piper.download_voices --data-dir "$V" "$@" ;;
+  test)   shift; talk "${*:-All done, tests are green.}"; wait ;;
+  *)      echo "usage: govori [on|off|status|voices|get <voice>...|test [text]]"; exit 1 ;;
+esac

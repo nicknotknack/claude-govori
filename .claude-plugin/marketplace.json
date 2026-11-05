@@ -1,0 +1,12 @@
+{
+  "name": "govori",
+  "owner": { "name": "nicknotknack" },
+  "metadata": { "description": "Spoken replies for Claude Code on macOS." },
+  "plugins": [
+    {
+      "name": "govori",
+      "source": "./",
+      "description": "Claude ends replies with a short voice line, read aloud by Piper or macOS say. Toggle with /govori."
+    }
+  ]
+}
