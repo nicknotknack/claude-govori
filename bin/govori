@@ -94,7 +94,7 @@ remove_voices() { # checks every name before deleting anything
 
 has_piper() { command -v piper >/dev/null || { echo "govori: Piper is not installed. Run: pipx install piper-tts" >&2; return 1; }; }
 
-has_voices() { [ -n "$(voices)" ] || { echo "govori: no voices installed. Run: /govori get ru_RU-dmitri-medium en_US-ryan-medium" >&2; return 1; }; }
+has_voices() { [ -n "$(voices)" ] || { echo "govori: no voices installed. Run: /govori get en_US-ryan-medium (or /govori get to list them)" >&2; return 1; }; }
 
 piper_python() { echo "$(dirname "$(readlink -f "$(command -v piper)")")/python"; }
 
@@ -154,9 +154,13 @@ speak() { # $1: JSON from the Stop hook
   return 0
 }
 
+system_language() { # macOS UI language: setup talks in it if the user has not written anything yet
+  local l; l=$(defaults read -g AppleLocale 2>/dev/null); echo "${l%%[_-]*}"
+}
+
 need_setup() { # true, with instructions for the skill, until the first run is finished
   [ "$SETUP" = done ] && return 1
-  echo "SETUP NEEDED. piper: $(command -v piper >/dev/null && echo installed || echo missing). installed voices: $(voices | tr '\n' ' ')"
+  echo "SETUP NEEDED. piper: $(command -v piper >/dev/null && echo installed || echo missing). installed voices: $(voices | tr '\n' ' '). system language: $(system_language)"
 }
 
 turn_on() {
@@ -166,6 +170,7 @@ turn_on() {
 
 settings() {
   echo "SETTINGS"
+  echo "system language: $(system_language)"
   echo "voice replies: $(is_on "${CLAUDE_CODE_SESSION_ID:-}" && echo on || echo off)"
   echo "scope: $SCOPE"; echo "speed: $SPEED"; echo "pitch: $PITCH"; echo "voices: $VOICES"
   echo "installed voices: $(voices | tr '\n' ' ')"

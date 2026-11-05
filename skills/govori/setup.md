@@ -2,7 +2,8 @@
 
 Rules for both flows:
 
-- Write to the user in their language. Keep every message to a line or two.
+- Write to the user in the language they write in. If they have not written anything yet, which is common because `/govori` is often the first message, use Claude Code's `language` setting if there is one, otherwise the `system language` from the `govori` output. Translate every question and option below, but never commands. Keep every message to a line or two.
+- In dialogs, call a voice by its speaker and any details you know, like "Ryan (male, US)", not by its file name. Add the quality only if two options would look the same otherwise. Use full voice names in commands.
 - Ask every choice with `AskUserQuestion`, never as plain text. It allows at most 4 questions per call and 4 options per question, and adds "Other" by itself.
 - Change settings only through `govori set`. Never edit the config file.
 - Run `govori install-piper` and `govori get` with a 10-minute Bash timeout: they download a lot.
@@ -41,13 +42,15 @@ Take `<lower>` and `<higher>` from these lists: the nearest values at least 0.05
 
 The `SETUP NEEDED` line says whether Piper is installed and which voices already are. If the user declines or dismisses a dialog, stop: say voice stays off and that `/govori` resumes setup. Do not run `setup-done`.
 
-1. **Piper** (only if missing). Ask whether to install it, offline speech engine, about 200 MB. On yes, run `govori install-piper`. If it fails, show the error and stop.
+Open with one line: a few quick questions, and the voices they pick get downloaded.
+
+1. **Piper** (only if missing). Ask whether to install it: offline speech engine, about 200 MB, installed with pipx (and pipx with Homebrew, if it is missing). On yes, run `govori install-piper`. If it fails, show the error and stop.
 2. **Scope.** Ask the scope question, with "This session only" marked (Recommended).
-3. **Languages.** Ask with `multiSelect: true`: the language of this conversation first, then others from Russian, English, German, Spanish. Map answers to two-letter codes (`ru`, `en`, `de`, `es`).
+3. **Languages.** Ask with `multiSelect: true`: the user's language first (see the rules above), then the next ones from English, Spanish, German, French, Russian, up to 4 options. Map answers, including "Other", to two-letter codes (`en`, `es`, `de`, `fr`, `ru`).
 4. **Voice**, for each language, one at a time:
    1. Ask which voice, up to 4 options in this order, marking installed ones:
+      - `en`: `en_US-ryan-medium` (male, US, Recommended), `en_US-amy-medium` (female, US), `en_US-lessac-medium` (female, US), `en_GB-alan-medium` (male, UK)
       - `ru`: `ru_RU-dmitri-medium` (male, Recommended), `ru_RU-denis-medium` (male), `ru_RU-irina-medium` (female), `ru_RU-ruslan-medium` (male)
-      - `en`: `en_US-ryan-medium` (male), `en_US-amy-medium` (female), `en_US-lessac-medium` (female), `en_US-joe-medium` (male)
       - Otherwise run `govori catalog <code>` and offer up to 4, preferring `-medium`. If it prints nothing, say there is no voice for that language and skip it.
    2. Say it downloads about 60 MB unless installed, then run `govori get <voice>`, `govori set voice <code> <voice>` and `govori test "<a short sentence in that language>"`.
    3. Ask "Keep this voice?" with "Keep" and "Try another". On "Try another", run `govori remove <voice>` if this flow downloaded it, then go back to the voice question.

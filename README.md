@@ -1,12 +1,12 @@
 # govori
 
-Spoken replies for Claude Code on macOS. Claude ends each reply with a short `🔊` line, and [Piper](https://github.com/OHF-Voice/piper1-gpl), an offline neural TTS, reads it aloud. Off by default, zero context cost until you turn it on.
+Spoken replies for Claude Code on macOS. Claude ends each reply with a short `🔊` line, and [Piper](https://github.com/OHF-Voice/piper1-gpl), an offline neural TTS, reads it aloud. Off by default, zero context cost until you turn it on. The name is Russian for "speak".
 
 ```bash
 claude plugin marketplace add nicknotknack/claude-govori && claude plugin install govori@govori
 ```
 
-Then restart Claude Code and type `/govori`
+Then restart Claude Code and type `/govori`. It asks a few questions, installs Piper (about 200 MB, needs Homebrew or pipx) and downloads the voices you pick (about 60 MB each).
 
 ![govori](assets/cover.jpg)
 
@@ -21,7 +21,7 @@ Then restart Claude Code and type `/govori`
 
 ## Good to know
 
-- Replies in a language with no installed voice stay silent. Add languages in `/govori settings`.
+- Speaks any language Piper has a voice for. Replies in a language with no installed voice stay silent, so add the ones you use in `/govori settings`.
 - Ask Claude to "read this aloud" and it speaks that text instead of a summary.
 - While in use, voices take about 150 MB of memory per language. The background process exits after 15 minutes of silence.
 
