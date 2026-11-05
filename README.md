@@ -37,7 +37,8 @@ Then download voices (~60 MB each). In Claude Code, or run `bin/govori get ...` 
 | `/govori get <voice>...` | Download Piper voices |
 | `/govori test [text]` | Speak a sample, e.g. `/govori test Привет, git и Projects` |
 
-- **On** applies at once in the current session and in every new one. **Off** removes the instruction and the speech.
+- **On** applies at once, in the current session only (other and new sessions stay silent). **Off** removes the instruction and the speech. Type `/govori` again to switch it back.
+- To make one switch control **every** session, opt in explicitly with `GOVORI_SCOPE=global` (see Config).
 - Ask Claude to "read this code aloud" and it puts that text in the voice block instead of a summary.
 - Each voice block's language is detected (macOS NaturalLanguage). Piper is used if a voice for that language is installed, else `say` with the best matching system voice.
 - Mixed text (Russian with English words like `git`, `Projects`) is read by the voice of the main language. Piper's Russian voices pronounce Latin words with English sounds, with an accent.
@@ -50,6 +51,7 @@ Set in `~/.claude/settings.json` under `env`, effective in new sessions.
 |---|---|---|
 | `GOVORI_RATE` | `210` | words per minute (`say`); Piper speed is scaled from it |
 | `GOVORI_VOICES` | first installed | `ru=ruslan,en=Daniel` per language: part of a Piper voice name, or a `say` voice name |
+| `GOVORI_SCOPE` | unset (per session) | `global`: one switch for all sessions, current and new. Anything else keeps it per session |
 
 ```json
 "env": { "GOVORI_VOICES": "ru=ruslan", "GOVORI_RATE": "230" }
@@ -59,6 +61,6 @@ Compare voices: `GOVORI_VOICES=ru=ruslan bin/govori test "Готово, тест
 
 ## How it works
 
-One flag file `~/.claude/govori/on`. `SessionStart` prints the rules when the flag exists; `Stop` takes everything from the last `🔊` line of `last_assistant_message`, detects its language and speaks it in the background. No marker, no speech. A new reply cuts off the previous one.
+State is a flag file per session, `~/.claude/govori/sessions/<session id>` (stale ones are deleted after 14 days). With `GOVORI_SCOPE=global` it is the single file `~/.claude/govori/on` instead. `SessionStart` prints the rules when the flag exists; `Stop` takes everything from the last `🔊` line of `last_assistant_message`, detects its language and speaks it in the background. No marker, no speech. A new reply cuts off the previous one.
 
 Uninstall: `claude plugin uninstall govori@govori`.

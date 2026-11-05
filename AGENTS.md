@@ -62,11 +62,11 @@ Merge into `env` of `~/.claude/settings.json` (keep existing keys; back the file
 
 ## 7. Finish
 
-Tell the user: start a new Claude Code session, then type `/govori on` (`/govori off` to disable, `/govori` toggles). Nothing is added to context while it is off.
+Tell the user: start a new Claude Code session, then type `/govori` (toggles; `on` / `off` set it explicitly). It applies to that session only. Nothing is added to context while it is off. Only if the user wants one switch for all sessions, add `"GOVORI_SCOPE": "global"` to `env`.
 
 ## Notes for contributors
 
-- Code is one script, `bin/govori`; keep it small. State is the flag file `~/.claude/govori/on`; voices live in `~/.claude/govori/voices`.
-- Test the Stop hook with `printf '%s' '{"last_assistant_message":"x\n\n🔊 Привет"}' | bin/govori hook-stop`. Use `printf`, not `echo`, in zsh.
+- Code is one script, `bin/govori`; keep it small. State is a flag file per session, `~/.claude/govori/sessions/<session id>` (the single file `~/.claude/govori/on` when `GOVORI_SCOPE=global`); voices live in `~/.claude/govori/voices`. Hooks read `session_id` from stdin JSON, commands from `$CLAUDE_CODE_SESSION_ID`.
+- Test the Stop hook: first `CLAUDE_CODE_SESSION_ID=s1 bin/govori on`, then `printf '%s' '{"session_id":"s1","last_assistant_message":"x\n\n🔊 Привет"}' | bin/govori hook-stop`. Use `printf`, not `echo`, in zsh. Use a throwaway `HOME` so tests don't touch real state.
 - Installed plugins run from a cache copy, so bump `version` in `.claude-plugin/plugin.json` and run `claude plugin update govori@govori` after changes.
 - Commits: Conventional Commits.

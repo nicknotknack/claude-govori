@@ -1,7 +1,31 @@
 #!/bin/bash
 # govori: spoken Claude replies. Engine: Piper if a voice for the reply's language is installed, else macOS `say`.
 PATH="$HOME/.local/bin:$PATH"
-D="$HOME/.claude/govori"; ON="$D/on"; V="$D/voices"
+D="$HOME/.claude/govori"; ON="$D/on"; S="$D/sessions"; V="$D/voices"
+
+# State: by default voice is on per session (flag file $S/<session id>). With GOVORI_SCOPE=global
+# it is one flag file $ON shared by every session. Hooks get the id on stdin, commands via env.
+global() { [ "${GOVORI_SCOPE:-}" = global ]; }
+
+flag() { # flag file for session id $1 in the current scope; fails if there is no usable id
+  if global; then echo "$ON"; return; fi
+  [[ $1 =~ ^[A-Za-z0-9_-]+$ ]] || return 1
+  echo "$S/$1"
+}
+
+is_on() { local f; f=$(flag "$1") && [ -f "$f" ]; }
+
+scope_name() { if global; then echo "ALL sessions (GOVORI_SCOPE=global)"; else echo "this session"; fi; }
+
+set_flag() { # $1 on|off
+  local f; f=$(flag "${CLAUDE_CODE_SESSION_ID:-}") || { echo "govori: no session id. Run it inside Claude Code, or set GOVORI_SCOPE=global." >&2; return 1; }
+  if [ "$1" = on ]; then
+    mkdir -p "$(dirname "$f")" && : > "$f" || return 1
+    find "$S" -type f -mtime +14 -delete 2>/dev/null
+  else
+    rm -f "$f"
+  fi
+}
 
 rules() { cat <<'R'
 Voice mode is ON: the last block of each reply is read aloud by a text-to-speech engine.
@@ -56,10 +80,16 @@ talk() { # speak $1 aloud; replaces whatever is still playing
   fi
 }
 
-speak() { # stdin: JSON from the Stop hook
-  [ -f "$ON" ] || return 0
+jget() { plutil -extract "$1" raw -o - - 2>/dev/null <<<"$2"; } # field $1 of JSON $2
+
+hook_sid() { # session id: from the hook's JSON on stdin, else from the environment
+  local s; s=$(jget session_id "$1"); echo "${s:-${CLAUDE_CODE_SESSION_ID:-}}"
+}
+
+speak() { # $1: JSON from the Stop hook
+  is_on "$(hook_sid "$1")" || return 0
   local m
-  m=$'\n'$(plutil -extract last_assistant_message raw -o - - 2>/dev/null) || return 0
+  m=$'\n'$(jget last_assistant_message "$1") || return 0
   [[ $m == *$'\n🔊'* ]] || return 0
   m=$(printf '%s' "${m##*$'\n'🔊}" | tr -d '`*#')
   [ -n "${m//[[:space:]]/}" ] && talk "$m"
@@ -67,12 +97,12 @@ speak() { # stdin: JSON from the Stop hook
 }
 
 case "${1:-toggle}" in
-  hook-start) [ -f "$ON" ] && rules ;;
-  hook-stop)  speak ;;
-  on)     mkdir -p "$D" && : > "$ON"; echo "Voice replies ON."; rules ;;
-  off)    rm -f "$ON"; echo "Voice replies OFF. Stop adding the 🔊 block to replies." ;;
-  toggle) if [ -f "$ON" ]; then "$0" off; else "$0" on; fi ;;
-  status) [ -f "$ON" ] && echo on || echo off ;;
+  hook-start) j=$(cat); is_on "$(hook_sid "$j")" && rules ;;
+  hook-stop)  speak "$(cat)" ;;
+  on)     set_flag on || exit 1; echo "Voice replies ON for $(scope_name)."; rules ;;
+  off)    set_flag off || exit 1; echo "Voice replies OFF for $(scope_name). Stop adding the 🔊 block to replies." ;;
+  toggle) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then "$0" off; else "$0" on; fi ;;
+  status) if is_on "${CLAUDE_CODE_SESSION_ID:-}"; then echo "on, $(scope_name)"; else echo "off, $(scope_name)"; fi ;;
   voices) ls "$V" 2>/dev/null | sed -n 's/\.onnx$//p' ;;
   get)    shift; mkdir -p "$V"; "$(dirname "$(readlink -f "$(command -v piper)")")/python" -m piper.download_voices --data-dir "$V" "$@" ;;
   test)   shift; talk "${*:-All done, tests are green.}"; wait ;;
